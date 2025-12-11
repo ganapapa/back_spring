@@ -1,0 +1,17 @@
+name: CI - Lightweight checks
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Gradle Wrapper (non-blocking)
+        uses: gradle/wrapper-validation-action@v2
+        continue-on-error: true

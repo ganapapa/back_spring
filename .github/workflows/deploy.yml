@@ -1,0 +1,113 @@
+name: Deploy Spring Boot to Ubuntu
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      APP_DIR: ${{ secrets.PROD_APP_DIR }}     # 예: /home/ubuntu/audigo_back_spring
+      SERVICE: ${{ secrets.PROD_SERVICE }}     # 예: springboot-audigo.service
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build (bootJar only)
+        run: |
+          chmod +x ./gradlew
+          ./gradlew clean bootJar -x test
+          ls -al build/libs
+
+      - name: Pick boot JAR (exclude -plain.jar)
+        id: pick
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR_FILE=$(ls -t build/libs/*.jar | grep -v -- '-plain\.jar$' | head -n1)
+          [ -n "${JAR_FILE:-}" ] || { echo "No boot JAR found in build/libs"; ls -al build/libs || true; exit 1; }
+          echo "JAR_FILE=$JAR_FILE" >> $GITHUB_ENV
+          echo "JAR_BASE=$(basename "$JAR_FILE")" >> $GITHUB_ENV
+
+      - name: Set SSH port default (22 if unset)
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.PROD_SSH_PORT }}" ]; then
+            echo "SSH_PORT=${{ secrets.PROD_SSH_PORT }}" >> $GITHUB_ENV
+          else
+            echo "SSH_PORT=22" >> $GITHUB_ENV
+          fi
+
+      - name: Trust server host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" "${{ secrets.PROD_SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Ensure target folders on server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            mkdir -p "${{ secrets.PROD_APP_DIR }}/releases" "${{ secrets.PROD_APP_DIR }}/build/libs"
+
+      - name: Copy JAR to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
+          source: ${{ env.JAR_FILE }}
+          target: ${{ secrets.PROD_APP_DIR }}/releases/
+
+      - name: Symlink & Restart service
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            # Runner의 github.sha 컨텍스트 값을 commit_sha 셸 변수에 저장합니다.
+            commit_sha="${{ github.sha }}"
+
+            APP_DIR="${{ secrets.PROD_APP_DIR }}"
+            SERVICE="${{ secrets.PROD_SERVICE }}"
+            SRC_BASENAME="${{ env.JAR_BASE }}"
+            UPLOADED="$APP_DIR/releases/build/libs/$SRC_BASENAME" # <- 수정된 경로
+
+            # GITHUB_SHA 대신 새로 정의한 commit_sha 변수를 사용합니다.
+            RELEASE="$APP_DIR/releases/audigo-back-spring-${commit_sha}.jar"
+
+            FINAL="$APP_DIR/build/libs/audigo-back-spring.jar"
+
+            # 업로드된 파일 이름을 커밋ID로 표준화
+            mv -f "$UPLOADED" "$RELEASE"
+
+            # 실행 경로 고정: 심볼릭 링크 갱신
+            ln -sfn "$RELEASE" "$FINAL"
+
+            # 오래된 릴리스 정리(최근 5개만 보관)
+            ls -1t "$APP_DIR"/releases/*.jar | tail -n +6 | xargs -r rm -f
+
+            # 서비스 재시작
+            sudo systemctl daemon-reload
+            sudo systemctl restart "$SERVICE"
+            sudo systemctl status "$SERVICE" --no-pager -l || true
