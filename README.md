@@ -33,7 +33,7 @@ java -jar build/libs/back-0.0.1-SNAPSHOT.jar
 ### API 문서
 
 서버 실행 후 다음 URL에서 API 문서를 확인할 수 있습니다:
-- Swagger UI: http://localhost:8080/swagger-ui/index.html
+- Swagger UI: http://localhost:8081/swagger-ui/index.html
 
 ## 📁 프로젝트 구조
 
