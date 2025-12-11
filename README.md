@@ -27,7 +27,7 @@ Spring Boot 기반의 백엔드 API 서버입니다.
 ./gradlew clean build
 
 # 실행
-java -jar build/libs/audigo-back-0.0.1-SNAPSHOT.jar
+java -jar build/libs/back-0.0.1-SNAPSHOT.jar
 ```
 
 ### API 문서
@@ -38,7 +38,7 @@ java -jar build/libs/audigo-back-0.0.1-SNAPSHOT.jar
 ## 📁 프로젝트 구조
 
 ```
-src/main/java/com/audigo/audigo_back/
+src/main/java/com/back/
 ├── config/          # 설정 클래스
 ├── controller/      # REST API 컨트롤러
 ├── dto/            # 데이터 전송 객체
