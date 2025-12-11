@@ -1,4 +1,4 @@
-# Audigo Backend (Spring Boot)
+# Backend (Spring Boot)
 
 Spring Boot 기반의 Audigo 백엔드 API 서버입니다.
 
